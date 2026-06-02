@@ -83,14 +83,9 @@ def emit_entry(modelfamily, modelregexp, firmwareregexp, warningmsg, presets_lis
     if not presets_list:
         lines.append('    ""')
     else:
-        # Each preset token on its own adjacent string literal line
         for i, token in enumerate(presets_list):
-            token_esc = c_escape(token.strip())
             suffix = " " if i < len(presets_list) - 1 else ""
-            if i == 0:
-                lines.append(f'    "{token_esc}{suffix}"')
-            else:
-                lines.append(f'    "{token_esc}{suffix}"')
+            lines.append(f'    "{c_escape(token.strip())}{suffix}"')
 
     lines.append("  },")
     return "\n".join(lines)
@@ -109,16 +104,17 @@ def load_version(data, path):
     )
 
 
+def _get_list(data, key):
+    return [str(v) for v in data.get(key, []) if v is not None]
+
+
 def load_default(data, path):
-    presets = data.get("presets", [])
-    # Strip YAML comments that sneak through as bare strings
-    clean = [p for p in presets if isinstance(p, str)]
     return emit_entry(
         modelfamily="DEFAULT",
         modelregexp="-",
         firmwareregexp="-",
         warningmsg="Default settings",
-        presets_list=clean,
+        presets_list=_get_list(data, "presets"),
     )
 
 
@@ -130,13 +126,12 @@ def load_ata(data, path):
     missing = ATA_REQUIRED - data.keys()
     if missing:
         sys.stderr.write(f"WARNING: {path}: missing required fields: {missing}\n")
-    presets = [p for p in data.get("presets", []) if isinstance(p, str)]
     return emit_entry(
         modelfamily=data.get("modelfamily", ""),
         modelregexp=data.get("modelregexp", ""),
         firmwareregexp=data.get("firmwareregexp", ""),
         warningmsg=data.get("warningmsg", ""),
-        presets_list=presets,
+        presets_list=_get_list(data, "presets"),
     )
 
 
@@ -146,14 +141,12 @@ def load_usb(data, path):
         sys.stderr.write(f"WARNING: {path}: missing required fields: {missing}\n")
     device = data.get("device", "")
     bridge = data.get("bridge", "")
-    modelfamily = f"USB: {device}; {bridge}"
-    presets = [p for p in data.get("presets", []) if isinstance(p, str)]
     return emit_entry(
-        modelfamily=modelfamily,
+        modelfamily=f"USB: {device}; {bridge}",
         modelregexp=data.get("modelregexp", ""),
         firmwareregexp=data.get("bcddeviceregexp", ""),
         warningmsg=data.get("warningmsg", ""),
-        presets_list=presets,
+        presets_list=_get_list(data, "presets"),
     )
 
 
