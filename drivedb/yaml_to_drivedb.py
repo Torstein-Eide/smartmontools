@@ -13,8 +13,10 @@ Walk order:
 """
 
 import argparse
+import datetime
 import re
 import sys
+import textwrap
 from pathlib import Path
 
 try:
@@ -22,53 +24,88 @@ try:
 except ImportError:
     sys.exit("PyYAML is required: pip install pyyaml")
 
-GENERATED_NOTICE = "THIS FILE IS GENERATED from the YAML sources under drivedb/yaml/."
-
-ARRAY_WRAPPER = """\
-/*
-const drive_settings builtin_knowndrives[] = {
- */"""
+try:
+    import jinja2
+except ImportError:
+    sys.exit("Jinja2 is required: pip install jinja2")
 
 FOOTER = """\
 /*
 }; // builtin_knowndrives[]
  */"""
 
-FALLBACK_PREAMBLE = [
-    (
-        "drivedb.h - smartmontools drive database file\n"
-        "\n"
-        "Home page of code is: https://www.smartmontools.org\n"
-        "\n"
-        "SPDX-License-Identifier: GPL-2.0-or-later"
-    ),
-]
+# Column width reserved for field names in the struct-doc block comment
+_FIELD_COL = 16
+# Text width inside a ' * ' comment line
+_COMMENT_WIDTH = 74
 
 
-def _block_comment(text: str) -> str:
-    """Wrap plain text as a /* ... */ block comment."""
-    lines = ["/*"]
-    for line in text.splitlines():
-        lines.append(f" * {line}" if line else " *")
-    lines.append(" */")
+def _jinja_format_field(name: str, desc: str) -> str:
+    """Jinja2 global: format one struct field with aligned continuation lines."""
+    first_prefix = f" *  {name:<{_FIELD_COL}}"
+    cont_prefix  = f" *  {' ' * _FIELD_COL}"
+    available_first = _COMMENT_WIDTH - len(first_prefix)
+    available_cont  = _COMMENT_WIDTH - len(cont_prefix)
+
+    words = str(desc).split()
+    lines = []
+    current_words = []
+    current_len = 0
+    first_line = True
+
+    for word in words:
+        width = available_first if first_line else available_cont
+        if current_words and current_len + 1 + len(word) > width:
+            prefix = first_prefix if first_line else cont_prefix
+            lines.append(prefix + " ".join(current_words))
+            current_words = [word]
+            current_len = len(word)
+            first_line = False
+        else:
+            current_words.append(word)
+            current_len += (1 if current_words else 0) + len(word)
+
+    if current_words:
+        prefix = first_prefix if first_line else cont_prefix
+        lines.append(prefix + " ".join(current_words))
+
     return "\n".join(lines)
 
 
-def build_header(preamble: list) -> str:
-    """Build the file header from preamble blocks stored in version.yaml.
+def _jinja_wrap_comment(text: str) -> str:
+    """Jinja2 filter: word-wrap a paragraph for inside a ' * ' comment line."""
+    wrapped = textwrap.fill(
+        str(text),
+        width=_COMMENT_WIDTH,
+        subsequent_indent=" * ",
+    )
+    return wrapped
 
-    The generated notice is appended to the first block (copyright).
-    Remaining blocks (struct-doc etc.) are emitted as-is.
-    The array wrapper comment is always appended last.
-    """
-    blocks = list(preamble) if preamble else list(FALLBACK_PREAMBLE)
 
-    # Append the generated notice to the first (copyright) block
-    blocks[0] = blocks[0].rstrip('\n') + "\n\n" + GENERATED_NOTICE
+def build_header(preamble) -> str:
+    """Render the file header via Jinja2 from the structured preamble dict."""
+    template_path = Path(__file__).parent / "drivedb_header.j2"
+    if not template_path.exists():
+        sys.exit(f"ERROR: template not found: {template_path}")
 
-    parts = [_block_comment(b) for b in blocks]
-    parts.append(ARRAY_WRAPPER)
-    return "\n\n".join(parts)
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(str(template_path.parent)),
+        trim_blocks=True,
+        lstrip_blocks=True,
+        keep_trailing_newline=True,
+    )
+    env.globals['format_field'] = _jinja_format_field
+    env.filters['wrap_comment'] = _jinja_wrap_comment
+
+    if not isinstance(preamble, dict):
+        preamble = {}
+
+    ctx = {
+        'intro': preamble.get('intro', {}),
+        'guide': preamble.get('guide', {}),
+        'year_end': f"{datetime.date.today().year % 100:02d}",
+    }
+    return env.get_template("drivedb_header.j2").render(ctx).rstrip('\n')
 
 
 def c_escape(s: str) -> str:
@@ -104,7 +141,7 @@ def emit_entry(modelfamily, modelregexp, firmwareregexp, warningmsg, presets_lis
 
 
 def load_version(data, path):
-    """Returns (entry_str, preamble_list)."""
+    """Returns (entry_str, preamble) where preamble is a dict or list."""
     value = data.get("value", "")
     if not value:
         sys.stderr.write(f"WARNING: {path}: missing 'value'\n")
@@ -115,7 +152,8 @@ def load_version(data, path):
         warningmsg="Version information",
         presets_list=[],
     )
-    preamble = [str(p) for p in data.get("preamble", []) if p is not None]
+    # preamble may be a dict (new structured format) or a list (legacy raw blocks)
+    preamble = data.get("preamble", {})
     return entry, preamble
 
 

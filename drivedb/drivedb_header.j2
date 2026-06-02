@@ -1,0 +1,37 @@
+/*
+ * {{ intro.get('filename', 'drivedb.h') }} - {{ intro.get('subtext', '') }}
+ *
+ * Home page of code is: {{ intro.get('homepage', '') }}
+ *
+{% for c in intro.get('copyright_old', []) %} * Copyright (C) {{ c }}
+{% endfor %}{% set cc = intro.get('copyright_current', {}) %}{% if cc %} * Copyright (C) {{ cc.get('start_year', '') }}-{{ year_end }} {{ cc.get('name', '') }}
+{% endif %}
+ *
+ * SPDX-License-Identifier: {{ intro.get('license', '') }}
+ *
+ * THIS FILE IS GENERATED from the YAML sources under drivedb/yaml/.
+ */
+
+/*
+ * Structure used to store drive database entries:
+ *
+ * struct drive_settings {
+{% for field in guide.ata.fields %} *   const char * {{ field }};
+{% endfor %} * };
+ *
+ * The elements are used in the following ways:
+ *
+{% for name, desc in guide.ata.fields.items() %}{{ format_field(name, desc) }}
+{% endfor %} *
+{% for note in guide.notes %} * {{ note | wrap_comment }}
+ *
+{% endfor %}
+ * Format for USB ID entries:
+ *
+{% for name, desc in guide.usb.fields.items() %}{{ format_field(name, desc) }}
+{% endfor %} *
+ */
+
+/*
+const drive_settings builtin_knowndrives[] = {
+ */

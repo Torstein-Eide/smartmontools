@@ -1,2 +1,67 @@
 type: version
-value: "7.5"
+value: '7.5'
+
+preamble:
+  intro:
+    filename: drivedb.h
+    subtext: smartmontools drive database file
+    homepage: https://www.smartmontools.org
+    copyright_old:
+      - 2003-11 Philip Williams, Bruce Allen
+    copyright_current:
+      start_year: 2008
+      name: Christian Franke
+    license: GPL-2.0-or-later
+
+  guide:
+    notes:
+      - >-
+        The regular expressions for drive model and firmware must match the full
+        string.  The effect of "^FULLSTRING$" is identical to "FULLSTRING".
+        The form ".*SUBSTRING.*" can be used if substring match is desired.
+      - >-
+        The table will be searched from the start to end or until the first
+        match, so the order in the table is important for distinct entries
+        that could match the same drive.
+
+    ata:
+      fields:
+        modelfamily: >-
+          Informal string about the model family/series of a
+          device. Set to "" if no info (apart from device id)
+          known.  The entry is ignored if this string starts with
+          a dollar sign.  Must not start with "USB:", see below.
+        modelregexp: >-
+          POSIX extended regular expression to match the model of
+          a device.  This should never be "".
+        firmwareregexp: >-
+          POSIX extended regular expression to match a devices's
+          firmware.  This is optional and should be "" if it is not
+          to be used.  If it is nonempty then it will be used to
+          narrow the set of devices matched by modelregexp.
+        warningmsg: >-
+          A message that may be displayed for matching drives.  For
+          example, to inform the user that they may need to apply a
+          firmware patch.
+        presets: >-
+          String with vendor-specific attribute ('-v') and firmware
+          bug fix ('-F') options.  Same syntax as in smartctl command
+          line.  The user's own settings override these.
+
+    usb:
+      fields:
+        modelfamily: >-
+          String with format "USB: DEVICE; BRIDGE" where
+          DEVICE is the name of the device and BRIDGE is
+          the name of the USB bridge.  Both may be empty
+          if no info known.
+        modelregexp: >-
+          POSIX extended regular expression to match the USB
+          vendor:product ID in hex notation ("0x1234:0xabcd").
+          This should never be "".
+        firmwareregexp: >-
+          POSIX extended regular expression to match the USB
+          bcdDevice info.  Only compared during search if other
+          entries with same USB vendor:product ID exist.
+        warningmsg: Not used yet.
+        presets: String with one device type ('-d') option.

@@ -598,9 +598,6 @@ def main():
     if not entries:
         sys.exit("ERROR: no entries parsed — check input file format")
 
-    # Save file-level block comments (copyright, struct-doc) into version.yaml
-    preamble = _extract_preamble_blocks(text)
-
     raw_entries = _extract_raw_entries(text) if args.include_source else []
     if args.include_source and len(raw_entries) != len(entries):
         sys.stderr.write(
@@ -615,17 +612,6 @@ def main():
             route_entry(entry, out_dir, used_slugs, raw_source=raw)
         except Exception as e:
             sys.stderr.write(f"WARNING: failed to write entry '{entry[0][:60]}': {e}\n")
-
-    # Merge preamble into the version.yaml that was just written
-    if preamble:
-        version_path = out_dir / "_meta" / "version.yaml"
-        if version_path.exists():
-            data = yaml.safe_load(version_path.read_text()) or {}
-            data['preamble'] = preamble
-            version_path.write_text(
-                yaml.dump(data, default_flow_style=False, allow_unicode=True,
-                          sort_keys=False, width=120)
-            )
 
     total = len(entries)
     ata = sum(1 for e in entries
