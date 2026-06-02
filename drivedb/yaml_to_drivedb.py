@@ -22,33 +22,9 @@ try:
 except ImportError:
     sys.exit("PyYAML is required: pip install pyyaml")
 
-HEADER = """\
-/*
- * drivedb.h - smartmontools drive database file
- *
- * Home page of code is: https://www.smartmontools.org
- *
- * Copyright (C) 2003-11 Philip Williams, Bruce Allen
- * Copyright (C) 2008-25 Christian Franke
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
- *
- * THIS FILE IS GENERATED from the YAML sources under drivedb/yaml/.
- * Edit those files instead of editing this file directly.
- */
+GENERATED_NOTICE = "THIS FILE IS GENERATED from the YAML sources under drivedb/yaml/."
 
-/*
- * Structure used to store drive database entries:
- *
- * struct drive_settings {
- *   const char * modelfamily;
- *   const char * modelregexp;
- *   const char * firmwareregexp;
- *   const char * warningmsg;
- *   const char * presets;
- * };
- */
-
+ARRAY_WRAPPER = """\
 /*
 const drive_settings builtin_knowndrives[] = {
  */"""
@@ -57,6 +33,42 @@ FOOTER = """\
 /*
 }; // builtin_knowndrives[]
  */"""
+
+FALLBACK_PREAMBLE = [
+    (
+        "drivedb.h - smartmontools drive database file\n"
+        "\n"
+        "Home page of code is: https://www.smartmontools.org\n"
+        "\n"
+        "SPDX-License-Identifier: GPL-2.0-or-later"
+    ),
+]
+
+
+def _block_comment(text: str) -> str:
+    """Wrap plain text as a /* ... */ block comment."""
+    lines = ["/*"]
+    for line in text.splitlines():
+        lines.append(f" * {line}" if line else " *")
+    lines.append(" */")
+    return "\n".join(lines)
+
+
+def build_header(preamble: list) -> str:
+    """Build the file header from preamble blocks stored in version.yaml.
+
+    The generated notice is appended to the first block (copyright).
+    Remaining blocks (struct-doc etc.) are emitted as-is.
+    The array wrapper comment is always appended last.
+    """
+    blocks = list(preamble) if preamble else list(FALLBACK_PREAMBLE)
+
+    # Append the generated notice to the first (copyright) block
+    blocks[0] = blocks[0].rstrip('\n') + "\n\n" + GENERATED_NOTICE
+
+    parts = [_block_comment(b) for b in blocks]
+    parts.append(ARRAY_WRAPPER)
+    return "\n\n".join(parts)
 
 
 def c_escape(s: str) -> str:
@@ -92,16 +104,19 @@ def emit_entry(modelfamily, modelregexp, firmwareregexp, warningmsg, presets_lis
 
 
 def load_version(data, path):
+    """Returns (entry_str, preamble_list)."""
     value = data.get("value", "")
     if not value:
         sys.stderr.write(f"WARNING: {path}: missing 'value'\n")
-    return emit_entry(
+    entry = emit_entry(
         modelfamily=f"VERSION: {value}",
         modelregexp="-",
         firmwareregexp="-",
         warningmsg="Version information",
         presets_list=[],
     )
+    preamble = [str(p) for p in data.get("preamble", []) if p is not None]
+    return entry, preamble
 
 
 def _get_list(data, key):
@@ -186,18 +201,28 @@ def parse_file(path: Path, yaml_root: Path):
 
 
 def collect_entries(yaml_root: Path):
+    """Returns (entries, preamble) where preamble is the list from version.yaml."""
     entries = []
+    preamble = []
 
     # 1. _meta: version first, then default
     meta_dir = yaml_root / "_meta"
-    for name in ("version.yaml", "default.yaml"):
-        p = meta_dir / name
-        if p.exists():
-            entry = parse_file(p, yaml_root)
-            if entry:
-                entries.append(entry)
-        else:
-            sys.stderr.write(f"WARNING: {p} not found\n")
+    version_path = meta_dir / "version.yaml"
+    if version_path.exists():
+        result = parse_file(version_path, yaml_root)
+        if result:
+            entry, preamble = result  # load_version returns (entry, preamble)
+            entries.append(entry)
+    else:
+        sys.stderr.write(f"WARNING: {version_path} not found\n")
+
+    default_path = meta_dir / "default.yaml"
+    if default_path.exists():
+        entry = parse_file(default_path, yaml_root)
+        if entry:
+            entries.append(entry)
+    else:
+        sys.stderr.write(f"WARNING: {default_path} not found\n")
 
     # 2. ata/** sorted
     ata_dir = yaml_root / "ata"
@@ -215,7 +240,7 @@ def collect_entries(yaml_root: Path):
             if entry:
                 entries.append(entry)
 
-    return entries
+    return entries, preamble
 
 
 def main():
@@ -232,9 +257,10 @@ def main():
     if not yaml_root.is_dir():
         sys.exit(f"ERROR: YAML root not found: {yaml_root}")
 
-    entries = collect_entries(yaml_root)
+    entries, preamble = collect_entries(yaml_root)
+    header = build_header(preamble)
 
-    out_lines = [HEADER, ""]
+    out_lines = [header, ""]
     for entry in entries:
         out_lines.append(entry)
     out_lines.append(FOOTER)

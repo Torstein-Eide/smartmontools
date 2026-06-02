@@ -313,6 +313,80 @@ def unique_path(directory: Path, slug: str, used: set) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Preamble extraction (file-level /* */ block comments before the first entry)
+# ---------------------------------------------------------------------------
+
+def _strip_block_comment(body: str) -> str:
+    """Strip the ' * ' prefix from each line of a /* */ block comment body,
+    preserving relative indentation that follows the prefix."""
+    lines = []
+    for line in body.splitlines():
+        # Remove optional leading whitespace + '*' + optional single space,
+        # keeping any further whitespace (relative indentation) intact.
+        s = re.sub(r'^\s*\*\s?', '', line)
+        lines.append(s)
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return '\n'.join(lines)
+
+
+def _extract_preamble_blocks(text: str) -> list:
+    """Return stripped text of every /* */ block comment that appears before
+    the first entry (i.e. before the first top-level '{' token).
+
+    The last block found is always the array wrapper comment
+    '/* const drive_settings ... = { */' — that one is excluded because the
+    generator emits it independently.
+    """
+    blocks = []
+    i = 0
+    n = len(text)
+    in_string = False
+    in_line_comment = False
+
+    while i < n:
+        c = text[i]
+        if in_line_comment:
+            if c == '\n':
+                in_line_comment = False
+        elif in_string:
+            if c == '\\' and i + 1 < n:
+                i += 2
+                continue
+            if c == '"':
+                in_string = False
+        elif c == '"':
+            in_string = True
+        elif c == '/' and i + 1 < n:
+            if text[i + 1] == '/':
+                in_line_comment = True
+                i += 2
+                continue
+            if text[i + 1] == '*':
+                i += 2
+                start = i
+                while i < n:
+                    if text[i] == '*' and i + 1 < n and text[i + 1] == '/':
+                        blocks.append(_strip_block_comment(text[start:i]))
+                        i += 2
+                        break
+                    i += 1
+                continue
+        elif c == '{':
+            break  # first real entry token — stop
+        i += 1
+
+    # Drop the last block: it's the array-wrapper comment
+    # (/* const drive_settings builtin_knowndrives[] = { */)
+    if blocks:
+        blocks.pop()
+
+    return blocks
+
+
+# ---------------------------------------------------------------------------
 # YAML output
 # ---------------------------------------------------------------------------
 
@@ -524,6 +598,9 @@ def main():
     if not entries:
         sys.exit("ERROR: no entries parsed — check input file format")
 
+    # Save file-level block comments (copyright, struct-doc) into version.yaml
+    preamble = _extract_preamble_blocks(text)
+
     raw_entries = _extract_raw_entries(text) if args.include_source else []
     if args.include_source and len(raw_entries) != len(entries):
         sys.stderr.write(
@@ -538,6 +615,17 @@ def main():
             route_entry(entry, out_dir, used_slugs, raw_source=raw)
         except Exception as e:
             sys.stderr.write(f"WARNING: failed to write entry '{entry[0][:60]}': {e}\n")
+
+    # Merge preamble into the version.yaml that was just written
+    if preamble:
+        version_path = out_dir / "_meta" / "version.yaml"
+        if version_path.exists():
+            data = yaml.safe_load(version_path.read_text()) or {}
+            data['preamble'] = preamble
+            version_path.write_text(
+                yaml.dump(data, default_flow_style=False, allow_unicode=True,
+                          sort_keys=False, width=120)
+            )
 
     total = len(entries)
     ata = sum(1 for e in entries
