@@ -195,10 +195,29 @@ def slugify(s: str) -> str:
     return s or 'unknown'
 
 
+# Canonical manufacturer names for known aliases.
+# Key: slugified first word(s) as produced by the raw heuristic.
+# Value: canonical directory name to use instead.
+MANUFACTURER_ALIASES = {
+    "wd":               "western-digital",  # "WD Blue/Red/Green ..."
+    "western":          "western-digital",  # "Western Digital ..."
+    "jmicron-maxiotek": "jmicron",          # "JMicron/Maxiotek ..."
+    "intel-solidigm":   "intel",            # "Intel/Solidigm ..."
+}
+
+
+# Canonical directory names for USB bridge/device first-word slugs.
+USB_DIR_ALIASES = {
+    "western": "western-digital",  # device "Western Digital" entries with no bridge
+    "usb3":    "generic",          # "USB3 to SATA" catch-all entry
+}
+
+
 def manufacturer_slug(modelfamily: str) -> str:
-    """Heuristic: use the first word of modelfamily as manufacturer."""
+    """Return the canonical manufacturer directory slug for an ATA modelfamily."""
     first = modelfamily.split()[0] if modelfamily.split() else modelfamily
-    return slugify(first)
+    raw = slugify(first)
+    return MANUFACTURER_ALIASES.get(raw, raw)
 
 
 def family_slug(modelfamily: str) -> str:
@@ -292,8 +311,13 @@ def route_entry(entry, out_dir: Path, used_slugs: dict) -> None:
         device = parts[0].strip()
         bridge = parts[1].strip() if len(parts) > 1 else ""
 
-        # Directory: bridge slug if available, else device slug, else "unknown"
-        dir_slug = slugify(bridge) if bridge else (slugify(device) if device else "unknown")
+        # Directory: first word of bridge name; fall back to first word of device; then "unknown".
+        # Using only the first word keeps e.g. "JMicron JMS578" and "JMicron JMS583" in the
+        # same jmicron/ dir instead of creating a per-model directory for each bridge variant.
+        bridge_word = bridge.split()[0] if bridge.split() else ""
+        device_word = device.split()[0] if device.split() else ""
+        raw_dir = slugify(bridge_word) if bridge_word else (slugify(device_word) if device_word else "unknown")
+        dir_slug = USB_DIR_ALIASES.get(raw_dir, raw_dir)
         dev_slug = slugify(device) if device else slugify(modelregexp)
 
         section_dir = out_dir / "usb" / dir_slug
