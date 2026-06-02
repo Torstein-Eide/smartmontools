@@ -1,0 +1,14 @@
+# spec v1.23: https://www.farnell.com/datasheets/1821167.pdf
+# tested with SFCF4096H2BU4TO-I-MS-527-STD
+modelfamily: "Swissbit C440 Industrial CompactFlash Card"
+modelregexp: "SFCF(2048|4096|8192|16GB|32GB|64GB)H[0-9]BU[24]TO-(C|I)-(MS|QT|NU)-5[0-9]7-STD"
+firmwareregexp: ""
+warningmsg: ""
+presets:
+  - "-v 196,raw24/raw24,Spare_Blocks"
+  - "-v 213,raw24/raw24,Spare_Blocks_Worst_Chip"
+  - "-v 229,raw48,Erase_Count"
+  - "-v 203,raw48,Total_ECC_Errors"
+  - "-v 232,raw48,Total_Number_of_Reads"
+  - "-v 214,raw48,Reserved_Attribute"   # Spec says "to be determined"
+  - "-v 215,raw48,Current_TRIM_Percent"

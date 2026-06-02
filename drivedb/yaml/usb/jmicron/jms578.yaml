@@ -1,0 +1,7 @@
+device: ""
+bridge: "JMicron JMS578"
+modelregexp: "0x0080:0x0578"
+bcddeviceregexp: ""    # 0x0104
+warningmsg: ""
+presets:
+  - "-d sat"
