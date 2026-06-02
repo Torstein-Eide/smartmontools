@@ -1,3 +1,4 @@
+---
 device: "Blueendless"
 bridge: "Initio"
 modelregexp: "0x0204:0x3639"   # U23QC

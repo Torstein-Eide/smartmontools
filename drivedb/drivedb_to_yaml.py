@@ -457,6 +457,7 @@ def write_yaml(path: Path, data: dict, notes: list = None,
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('w') as f:
+        f.write('---\n')
         for note in (notes or []):
             if note.strip():
                 f.write(f'# {note.strip()}\n')
