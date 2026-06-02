@@ -16,7 +16,6 @@ import argparse
 import datetime
 import re
 import sys
-import textwrap
 from pathlib import Path
 
 try:
@@ -34,56 +33,13 @@ FOOTER = """\
 }; // builtin_knowndrives[]
  */"""
 
-# Column width reserved for field names in the struct-doc block comment
-_FIELD_COL = 16
-# Text width inside a ' * ' comment line
-_COMMENT_WIDTH = 74
-
-
-def _jinja_format_field(name: str, desc: str) -> str:
-    """Jinja2 global: format one struct field with aligned continuation lines."""
-    first_prefix = f" *  {name:<{_FIELD_COL}}"
-    cont_prefix  = f" *  {' ' * _FIELD_COL}"
-    available_first = _COMMENT_WIDTH - len(first_prefix)
-    available_cont  = _COMMENT_WIDTH - len(cont_prefix)
-
-    words = str(desc).split()
-    lines = []
-    current_words = []
-    current_len = 0
-    first_line = True
-
-    for word in words:
-        width = available_first if first_line else available_cont
-        if current_words and current_len + 1 + len(word) > width:
-            prefix = first_prefix if first_line else cont_prefix
-            lines.append(prefix + " ".join(current_words))
-            current_words = [word]
-            current_len = len(word)
-            first_line = False
-        else:
-            current_words.append(word)
-            current_len += (1 if current_words else 0) + len(word)
-
-    if current_words:
-        prefix = first_prefix if first_line else cont_prefix
-        lines.append(prefix + " ".join(current_words))
-
-    return "\n".join(lines)
-
-
-def _jinja_wrap_comment(text: str) -> str:
-    """Jinja2 filter: word-wrap a paragraph for inside a ' * ' comment line."""
-    wrapped = textwrap.fill(
-        str(text),
-        width=_COMMENT_WIDTH,
-        subsequent_indent=" * ",
-    )
-    return wrapped
-
 
 def build_header(preamble) -> str:
-    """Render the file header via Jinja2 from the structured preamble dict."""
+    """Render the file header via Jinja2.
+
+    Only the intro (copyright/license) section is read from preamble.
+    The struct documentation is hardcoded in drivedb_header.j2.
+    """
     template_path = Path(__file__).parent / "drivedb_header.j2"
     if not template_path.exists():
         sys.exit(f"ERROR: template not found: {template_path}")
@@ -94,15 +50,12 @@ def build_header(preamble) -> str:
         lstrip_blocks=True,
         keep_trailing_newline=True,
     )
-    env.globals['format_field'] = _jinja_format_field
-    env.filters['wrap_comment'] = _jinja_wrap_comment
 
     if not isinstance(preamble, dict):
         preamble = {}
 
     ctx = {
         'intro': preamble.get('intro', {}),
-        'guide': preamble.get('guide', {}),
         'year_end': f"{datetime.date.today().year % 100:02d}",
     }
     return env.get_template("drivedb_header.j2").render(ctx).rstrip('\n')
