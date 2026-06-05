@@ -7,22 +7,13 @@ body:
       value: |
         ## What is drivedb?
 
-        SMART attribute slots (1–255) have no fixed meaning - each manufacturer
-        assigns them differently. `drivedb.h` matches a drive by model string and
-        optionally by firmware version, then overrides the generic defaults with
-        model-specific `-v` flags (attribute names, raw-value formats, failure
-        thresholds) and `-F` flags (firmware bug workarounds).
+        SMART attribute slots (1–255) have no fixed meaning - each manufacturer assigns them differently. `drivedb.h` matches a drive by model string and optionally by firmware version, then overrides the generic defaults with model-specific `-v` flags (attribute names, raw-value formats, failure thresholds) and `-F` flags (firmware bug workarounds).
 
-        Firmware matching matters when a vendor changed attribute behaviour or
-        introduced a bug in a specific firmware release - the fix can be scoped to
-        only the affected versions instead of the whole model family.
+        Firmware matching matters when a vendor changed attribute behaviour or introduced a bug in a specific firmware release - the fix can be scoped to only the affected versions instead of the whole model family.
 
-        For USB-ATA bridges, drivedb also sets the `-d` flag (e.g. `-d sat`) so
-        `smartctl` knows which protocol to use to reach the drive behind the bridge.
+        For USB-ATA bridges, drivedb also sets the `-d` flag (e.g. `-d sat`) so `smartctl` knows which protocol to use to reach the drive behind the bridge.
 
-        Without a matching entry, `smartctl` falls back to generic labels like
-        `Unknown_Attribute`, misreads a raw value - e.g. reporting a temperature
-        as a 48-bit counter - or fails to communicate with a USB drive at all.
+        Without a matching entry, `smartctl` falls back to generic labels like `Unknown_Attribute`, misreads a raw value - e.g. reporting a temperature as a 48-bit counter - or fails to communicate with a USB drive at all.
 
         ---
 
@@ -167,15 +158,18 @@ body:
         `sntjmicron/sat`, `sntrealtek`, `sntasmedia`.
       placeholder: "sat"
 
-  - type: checkboxes
+  - type: textarea
     id: preset_F
     attributes:
       label: Suggested `-F` flags (optional)
-      description: Firmware bug workarounds observed on this drive.
-      options:
-        - label: "`-F xerrorlba` - fix byte order of LBA in error log"
-        - label: "`-F nologdir` - do not read GP/SMART log directory"
-        - label: "`-F samsung3` - fix Samsung F/W bug in SMART status response"
+      description: >
+        Firmware bug workarounds observed on this drive. One flag per line.
+        Currently known values:
+        `xerrorlba` (fix LBA byte order in error log),
+        `nologdir` (skip GP/SMART log directory),
+        `samsung3` (fix Samsung SMART status response bug).
+      placeholder: |
+        -F xerrorlba
 
   - type: input
     id: version
