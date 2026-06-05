@@ -112,7 +112,6 @@ body:
   - type: markdown
     attributes:
       value: |
-        <!--
         ---
         Want this fixed faster? Send a pull request.
 
@@ -149,4 +148,4 @@ body:
         Step 7 — Open a pull request
         Go to your fork on GitHub. A banner will appear — click Compare & pull request.
         The PR template will guide you through the final checklist.
-        -->
+        
