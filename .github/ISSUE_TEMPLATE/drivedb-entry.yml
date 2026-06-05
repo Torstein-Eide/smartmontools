@@ -5,6 +5,18 @@ body:
   - type: markdown
     attributes:
       value: |
+        ## What is drivedb?
+
+        `drivedb.h` is a database of drive-specific SMART attribute definitions.
+        Without an entry for your drive, `smartctl` shows raw attribute numbers
+        instead of meaningful names — and cannot warn you when a value crosses a
+        vendor-defined danger threshold.
+
+        If your drive is missing or has wrong attribute names, adding an entry
+        fixes it for everyone who runs the same model.
+
+        ---
+
         **Before filing:** test with the latest drivedb first.
 
         ```bash
