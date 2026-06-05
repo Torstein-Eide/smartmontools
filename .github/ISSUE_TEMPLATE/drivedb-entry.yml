@@ -125,9 +125,7 @@ body:
     attributes:
       label: Other model numbers in this family (optional)
       description: >
-        List any other model strings that belong to the same drive family but
-        are not covered by your proposed regex. One model per line, copied
-        exactly from `smartctl -i`.
+        List any other model strings that belong to the same drive family. One model per line, copied from datasheet or `smartctl -i /dev/sda`.
       placeholder: |
         MEMPEK1W016GA
         MEMPEK1W032GA
@@ -147,15 +145,37 @@ body:
       placeholder: "MEMPE.1.0..GA"
 
   - type: textarea
-    id: suggested_presets
+    id: preset_v
     attributes:
-      label: Suggested presets (optional)
+      label: Suggested `-v` flags (optional)
       description: >
-        If you already know the correct `-v` flags, add them here.
-        See the [drivedb format](../drivedb/yaml/ata/) for examples.
+        Overrides ATA attribute names and raw-value formats.
+        Format: `-v ID,FORMAT[:BYTEORDER][,NAME]`
       placeholder: |
         -v 190,tempminmax,Airflow_Temperature_Cel
         -v 194,tempminmax,Temperature_Celsius
+
+  - type: input
+    id: preset_d
+    attributes:
+      label: Suggested `-d` flag (optional, USB bridges)
+      description: >
+        Device/protocol type. Required for USB-ATA bridges so smartctl knows
+        how to talk to the drive. Leave blank for direct-attached ATA drives.
+        Known values: `sat`, `sat,12`, `usbjmicron`, `usbjmicron,x`, `usbjmicron,p`,
+        `usbjmicron,0`, `usbcypress`, `usbprolific`, `usbsunplus`, `sntjmicron`,
+        `sntjmicron/sat`, `sntrealtek`, `sntasmedia`.
+      placeholder: "sat"
+
+  - type: checkboxes
+    id: preset_F
+    attributes:
+      label: Suggested `-F` flags (optional)
+      description: Firmware bug workarounds observed on this drive.
+      options:
+        - label: "`-F xerrorlba` - fix byte order of LBA in error log"
+        - label: "`-F nologdir` - do not read GP/SMART log directory"
+        - label: "`-F samsung3` - fix Samsung F/W bug in SMART status response"
 
   - type: input
     id: version
