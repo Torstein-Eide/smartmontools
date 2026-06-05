@@ -7,13 +7,22 @@ body:
       value: |
         ## What is drivedb?
 
-        `drivedb.h` is a database of drive-specific SMART attribute definitions.
-        Without an entry for your drive, `smartctl` shows raw attribute numbers
-        instead of meaningful names — and cannot warn you when a value crosses a
-        vendor-defined danger threshold.
+        SMART attribute slots (1–255) have no fixed meaning — each manufacturer
+        assigns them differently. `drivedb.h` matches a drive by model string and
+        optionally by firmware version, then overrides the generic defaults with
+        model-specific `-v` flags (attribute names, raw-value formats, failure
+        thresholds) and `-F` flags (firmware bug workarounds).
 
-        If your drive is missing or has wrong attribute names, adding an entry
-        fixes it for everyone who runs the same model.
+        Firmware matching matters when a vendor changed attribute behaviour or
+        introduced a bug in a specific firmware release — the fix can be scoped to
+        only the affected versions instead of the whole model family.
+
+        For USB-ATA bridges, drivedb also sets the `-d` flag (e.g. `-d sat`) so
+        `smartctl` knows which protocol to use to reach the drive behind the bridge.
+
+        Without a matching entry, `smartctl` falls back to generic labels like
+        `Unknown_Attribute`, misreads a raw value — e.g. reporting a temperature
+        as a 48-bit counter — or fails to communicate with a USB drive at all.
 
         ---
 
