@@ -119,33 +119,43 @@ body:
         merged without waiting for someone else to own a similar drive.
 
         Step 1 — Fork
-        Click the Fork button in the top-right corner of the repository:
+        Click the **Fork** button in the top-right corner of the repository:
         https://github.com/smartmontools/smartmontools
 
         Step 2 — Clone your fork
-            git clone https://github.com/<your-username>/smartmontools.git
-            cd smartmontools
+        ```bash
+        git clone https://github.com/<your-username>/smartmontools.git
+        cd smartmontools
+        ```
 
         Step 3 — Create a branch
-            git checkout -b drivedb/<vendor>-<family>
+        ```bash
+        git checkout -b drivedb/<vendor>-<family>
+        ```
 
         Step 4 — Add or edit the YAML file
-            ATA:  drivedb/yaml/ata/<vendor>/<family>.yaml
-            USB:  drivedb/yaml/usb/<vendor>/<product>.yaml
-        Edit the file so your drive shows the correct attribute names when you run smartctl -a.
-        See CONTRIBUTING.md for field descriptions and an example entry.
+        ```
+        ATA:  drivedb/yaml/ata/<vendor>/<family>.yaml
+        USB:  drivedb/yaml/usb/<vendor>/<product>.yaml
+        ```
+        Edit the file so your drive shows the correct attribute names when you run `smartctl -a`.
+        See `CONTRIBUTING.md` for field descriptions and an example entry.
 
         Step 5 — Regenerate and test
-            python3 drivedb/yaml_to_drivedb.py > drivedb/drivedb.h
-            python3 drivedb/verify_drivedb.py
-            smartctl --drivedb=drivedb/drivedb.h -a /dev/sdX
+        ```bash
+        python3 drivedb/yaml_to_drivedb.py > drivedb/drivedb.h
+        python3 drivedb/verify_drivedb.py
+        smartctl --drivedb=drivedb/drivedb.h -a /dev/sdX
+        ```
 
         Step 6 — Commit and push
-            git add drivedb/yaml/... drivedb/drivedb.h
-            git commit -m "drivedb: add <Family Name>"
-            git push -u origin drivedb/<vendor>-<family>
+        ```bash
+        git add drivedb/yaml/<vendor>/<family>.yaml drivedb/drivedb.h
+        git commit -m "drivedb: add <Family Name>"
+        git push -u origin drivedb/<vendor>-<family>
+        ```
 
         Step 7 — Open a pull request
-        Go to your fork on GitHub. A banner will appear — click Compare & pull request.
+        Go to your fork on GitHub. A banner will appear — click **Compare & pull request**.
         The PR template will guide you through the final checklist.
         
