@@ -90,6 +90,29 @@ body:
       required: true
 
   - type: input
+    id: datasheet
+    attributes:
+      label: Datasheet / product page URL (optional)
+      description: >
+        Link to the manufacturer datasheet or product page. Helps maintainers
+        verify attribute definitions without owning the drive.
+      placeholder: "https://www.example.com/datasheet/WD-Red-DS.pdf"
+
+  - type: textarea
+    id: other_models
+    attributes:
+      label: Other model numbers in this family (optional)
+      description: >
+        List any other model strings that belong to the same drive family but
+        are not covered by your proposed regex. One model per line, copied
+        exactly from `smartctl -i`.
+      placeholder: |
+        MEMPEK1W016GA
+        MEMPEK1W032GA
+        MEMPEI1W016GA
+        MEMPEK1J016GA
+
+  - type: input
     id: proposed_regexp
     attributes:
       label: Proposed modelregexp (optional)
