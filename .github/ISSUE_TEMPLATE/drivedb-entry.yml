@@ -7,22 +7,22 @@ body:
       value: |
         ## What is drivedb?
 
-        SMART attribute slots (1–255) have no fixed meaning — each manufacturer
+        SMART attribute slots (1–255) have no fixed meaning - each manufacturer
         assigns them differently. `drivedb.h` matches a drive by model string and
         optionally by firmware version, then overrides the generic defaults with
         model-specific `-v` flags (attribute names, raw-value formats, failure
         thresholds) and `-F` flags (firmware bug workarounds).
 
         Firmware matching matters when a vendor changed attribute behaviour or
-        introduced a bug in a specific firmware release — the fix can be scoped to
+        introduced a bug in a specific firmware release - the fix can be scoped to
         only the affected versions instead of the whole model family.
 
         For USB-ATA bridges, drivedb also sets the `-d` flag (e.g. `-d sat`) so
         `smartctl` knows which protocol to use to reach the drive behind the bridge.
 
         Without a matching entry, `smartctl` falls back to generic labels like
-        `Unknown_Attribute`, misreads a raw value — e.g. reporting a temperature
-        as a 48-bit counter — or fails to communicate with a USB drive at all.
+        `Unknown_Attribute`, misreads a raw value - e.g. reporting a temperature
+        as a 48-bit counter - or fails to communicate with a USB drive at all.
 
         ---
 
@@ -41,7 +41,7 @@ body:
     attributes:
       label: Drive model string
       description: >
-        Exact string from `smartctl -i` — "Device Model" for ATA, "Product" for USB.
+        Exact string from `smartctl -i` - "Device Model" for ATA, "Product" for USB.
         Copy-paste; do not retype.
       placeholder: "WDC WD40EFRX-68WT0N0"
     validations:
@@ -51,7 +51,7 @@ body:
     id: family
     attributes:
       label: Drive family (informal name)
-      description: Your best guess is fine — e.g. "Western Digital Red Plus", "Samsung 870 EVO".
+      description: Your best guess is fine - e.g. "Western Digital Red Plus", "Samsung 870 EVO".
       placeholder: "Western Digital Red Plus"
 
   - type: input
@@ -140,7 +140,7 @@ body:
       label: Proposed modelregexp (optional)
       description: >
         POSIX extended regex to match your drive model(s). Use `.` as a
-        single-character wildcard where model variants differ — e.g.
+        single-character wildcard where model variants differ - e.g.
         `MEMPE.1.0..GA` matches `MEMPEK1W016GA`, `MEMPEI1J032GA`, etc.
         Test your regex at https://www.debuggex.com/ (select POSIX ERE).
         Leave blank if unsure.
@@ -175,22 +175,22 @@ body:
         Adding a drive entry yourself takes about 10 minutes and gets your fix
         merged without waiting for someone else to own a similar drive.
 
-        Step 1 — Fork
+        Step 1 - Fork
         Click the **Fork** button in the top-right corner of the repository:
         https://github.com/smartmontools/smartmontools
 
-        Step 2 — Clone your fork
+        Step 2 - Clone your fork
         ```bash
         git clone https://github.com/<your-username>/smartmontools.git
         cd smartmontools
         ```
 
-        Step 3 — Create a branch
+        Step 3 - Create a branch
         ```bash
         git checkout -b drivedb/<vendor>-<family>
         ```
 
-        Step 4 — Add or edit the YAML file
+        Step 4 - Add or edit the YAML file
         ```
         ATA:  drivedb/yaml/ata/<vendor>/<family>.yaml
         USB:  drivedb/yaml/usb/<vendor>/<product>.yaml
@@ -198,21 +198,21 @@ body:
         Edit the file so your drive shows the correct attribute names when you run `smartctl -a`.
         See `CONTRIBUTING.md` for field descriptions and an example entry.
 
-        Step 5 — Regenerate and test
+        Step 5 - Regenerate and test
         ```bash
         python3 drivedb/yaml_to_drivedb.py > drivedb/drivedb.h
         python3 drivedb/verify_drivedb.py
         smartctl --drivedb=drivedb/drivedb.h -a /dev/sdX
         ```
 
-        Step 6 — Commit and push
+        Step 6 - Commit and push
         ```bash
         git add drivedb/yaml/<vendor>/<family>.yaml drivedb/drivedb.h
         git commit -m "drivedb: add <Family Name>"
         git push -u origin drivedb/<vendor>-<family>
         ```
 
-        Step 7 — Open a pull request
-        Go to your fork on GitHub. A banner will appear — click **Compare & pull request**.
+        Step 7 - Open a pull request
+        Go to your fork on GitHub. A banner will appear - click **Compare & pull request**.
         The PR template will guide you through the final checklist.
         
