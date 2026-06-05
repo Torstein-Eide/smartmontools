@@ -89,6 +89,17 @@ body:
     validations:
       required: true
 
+  - type: input
+    id: proposed_regexp
+    attributes:
+      label: Proposed modelregexp (optional)
+      description: >
+        POSIX extended regex to match your drive model(s). Use `.` as a
+        single-character wildcard where model variants differ — e.g.
+        `MEMPE.1.0..GA` matches `MEMPEK1W016GA`, `MEMPEI1J032GA`, etc.
+        Leave blank if unsure.
+      placeholder: "MEMPE.1.0..GA"
+
   - type: textarea
     id: suggested_presets
     attributes:
