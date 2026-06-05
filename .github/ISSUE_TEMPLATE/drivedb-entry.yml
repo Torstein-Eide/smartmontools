@@ -88,11 +88,12 @@ body:
     attributes:
       label: What is wrong?
       options:
-        - label: Drive is completely missing from drivedb
         - label: Wrong or missing attribute name
+        - label: Need `-d` flag for protocol to be read.
         - label: Wrong attribute raw-value type (e.g. raw48 vs raw16)
         - label: Wrong or missing failure threshold
         - label: Wrong or missing firmware bug fix flag (-F)
+        - label: Drive is completely missing from drivedb
         - label: Other (describe below)
     validations:
       required: true
