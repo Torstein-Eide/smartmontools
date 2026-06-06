@@ -3,6 +3,7 @@
 check_yaml.py - validate drivedb YAML source tree or generated drivedb.h
 
 Usage:
+    python3 drivedb/check_yaml.py path/to/file.yaml
     python3 drivedb/check_yaml.py [--yaml-root drivedb/yaml]
     python3 drivedb/check_yaml.py --drivedb drivedb/drivedb.h
 
@@ -25,6 +26,24 @@ try:
     _TRIE_AVAILABLE = True
 except ImportError:
     _TRIE_AVAILABLE = False
+
+try:
+    from yamllint import linter as _yamllint_linter
+    from yamllint.config import YamlLintConfig as _YamlLintConfig
+    _YAMLLINT_CONFIG = _YamlLintConfig(
+        "extends: default\n"
+        "rules:\n"
+        "  line-length: disable\n"
+        "  truthy: disable\n"
+    )
+    _YAMLLINT_AVAILABLE = True
+except ImportError:
+    _YAMLLINT_AVAILABLE = False
+    print(
+        "note: yamllint not installed — YAML style checks skipped\n"
+        "      install with: pip install yamllint",
+        file=sys.stderr,
+    )
 
 # ---------------------------------------------------------------------------
 # Validation tables (mirrors C tables in atacmds.cpp / knowndrives.cpp)
@@ -55,6 +74,26 @@ def suggest_regexp(models: list) -> str | None:
     if not _TRIE_AVAILABLE or not models:
         return None
     return _TrieRegEx(*models).regex()
+
+
+# ---------------------------------------------------------------------------
+# YAML lint
+# ---------------------------------------------------------------------------
+
+def check_yaml_lint(path: Path) -> list:
+    """Run yamllint on path; return list of error strings. No-op if not installed."""
+    if not _YAMLLINT_AVAILABLE:
+        return []
+    try:
+        text = path.read_text()
+    except OSError as exc:
+        return [f"{path}: cannot read file: {exc}"]
+    problems = list(_yamllint_linter.run(text, _YAMLLINT_CONFIG))
+    return [
+        f"{path}:{p.line}:{p.column}: lint: {p.message}"
+        for p in problems
+        if p.level == "error"
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -118,122 +157,240 @@ def check_vendorattribute(va, idx, path):
 
 
 # ---------------------------------------------------------------------------
-# Entry-level checker
+# Entry-level checker — structured sub-checks
 # ---------------------------------------------------------------------------
 
-def check_entry_data(data, path, section):
-    """Validate one YAML dict; section is 'ata', 'usb', or 'meta'.
-
-    Returns list of error strings.
-    """
+def _check_modelregexp_ata(data, path):
+    """Check modelregexp for an ATA entry. Returns (errors, compiled_mr)."""
     errors = []
+    compiled_mr = None
+    mr_raw = data.get("modelregexp")
+    if not mr_raw and mr_raw != 0:
+        msg = f"{path}: modelregexp: missing or empty"
+        suggestion = suggest_regexp([str(m) for m in data.get("test_model", [])])
+        if suggestion:
+            msg += f"\n  suggestion: {suggestion}"
+        errors.append(msg)
+    else:
+        if isinstance(mr_raw, list):
+            mr = "|".join(str(v) for v in mr_raw if v is not None)
+        else:
+            mr = str(mr_raw) if mr_raw is not None else ""
+        if not mr:
+            errors.append(f"{path}: modelregexp: empty after joining list")
+        else:
+            err = check_regexp(mr, "modelregexp", path)
+            if err:
+                errors.append(err)
+            else:
+                compiled_mr = re.compile(mr)
+    return errors, compiled_mr
 
+
+def _check_modelregexp_usb(data, path):
+    """Check modelregexp for a USB entry. Returns (errors, compiled_mr)."""
+    errors = []
+    compiled_mr = None
+    mr_raw = data.get("modelregexp")
+    if not mr_raw and mr_raw != 0:
+        msg = f"{path}: modelregexp: missing or empty"
+        suggestion = suggest_regexp([str(m) for m in data.get("test_model", [])])
+        if suggestion:
+            msg += f"\n  suggestion: {suggestion}"
+        errors.append(msg)
+    else:
+        mr = str(mr_raw) if mr_raw is not None else ""
+        if not mr:
+            errors.append(f"{path}: modelregexp: empty")
+        else:
+            err = check_regexp(mr, "modelregexp", path)
+            if err:
+                errors.append(err)
+            else:
+                compiled_mr = re.compile(mr)
+    return errors, compiled_mr
+
+
+def _run_validate_checks(data, path, section):
+    """Yield (label, [errors]) for each named validation sub-check.
+
+    ATA:  modelregexp, test_model, firmwareregexp, vendorattributes, firmwarebug
+    USB:  modelregexp, test_model, bcddeviceregexp, devicetype
+    meta: (none)
+    """
     if section == "meta":
-        return errors  # VERSION / DEFAULT are structural — skip
+        return
 
     if section == "ata":
-        # modelregexp: required, non-empty, valid regex (list joined with |)
-        mr_raw = data.get("modelregexp")
-        compiled_mr = None
-        if not mr_raw and mr_raw != 0:
-            msg = f"{path}: modelregexp: missing or empty"
-            suggestion = suggest_regexp([str(m) for m in data.get("test_model", [])])
-            if suggestion:
-                msg += f"\n  suggestion: {suggestion}"
-            errors.append(msg)
-        else:
-            if isinstance(mr_raw, list):
-                mr = "|".join(str(v) for v in mr_raw if v is not None)
-            else:
-                mr = str(mr_raw) if mr_raw is not None else ""
-            if not mr:
-                errors.append(f"{path}: modelregexp: empty after joining list")
-            else:
-                err = check_regexp(mr, "modelregexp", path)
-                if err:
-                    errors.append(err)
-                else:
-                    compiled_mr = re.compile(mr)
+        mr_errors, compiled_mr = _check_modelregexp_ata(data, path)
+        yield "modelregexp", mr_errors
 
-        # test_model: each entry must be fully matched by modelregexp
+        tm_errors = []
         for model in data.get("test_model", []):
             model = str(model)
             if compiled_mr is None:
                 break
             if not compiled_mr.fullmatch(model):
-                errors.append(
-                    f"{path}: test_model: {model!r} does not match modelregexp"
-                )
+                tm_errors.append(f"{path}: test_model: {model!r} does not match modelregexp")
+        yield "test_model", tm_errors
 
-        # firmwareregexp: valid regex if non-empty
+        fw_errors = []
         fw = data.get("firmwareregexp", "")
         if fw:
             err = check_regexp(str(fw), "firmwareregexp", path)
             if err:
-                errors.append(err)
+                fw_errors.append(err)
+        yield "firmwareregexp", fw_errors
 
-        # vendorattributes
+        va_errors = []
         for idx, va in enumerate(data.get("vendorattributes", [])):
-            errors.extend(check_vendorattribute(va, idx, path))
+            va_errors.extend(check_vendorattribute(va, idx, path))
+        yield "vendorattributes", va_errors
 
-        # firmwarebug
+        fb_errors = []
         for fb in data.get("firmwarebug", []):
             if fb not in VALID_FIRMWAREBUGS:
-                errors.append(
-                    f"{path}: firmwarebug: {fb!r} is not a known firmware bug value"
-                )
+                fb_errors.append(f"{path}: firmwarebug: {fb!r} is not a known firmware bug value")
+        yield "firmwarebug", fb_errors
 
     elif section == "usb":
-        # modelregexp: required, non-empty, valid regex
-        mr_raw = data.get("modelregexp")
-        compiled_mr = None
-        if not mr_raw and mr_raw != 0:
-            msg = f"{path}: modelregexp: missing or empty"
-            suggestion = suggest_regexp([str(m) for m in data.get("test_model", [])])
-            if suggestion:
-                msg += f"\n  suggestion: {suggestion}"
-            errors.append(msg)
-        else:
-            mr = str(mr_raw) if mr_raw is not None else ""
-            if not mr:
-                errors.append(f"{path}: modelregexp: empty")
-            else:
-                err = check_regexp(mr, "modelregexp", path)
-                if err:
-                    errors.append(err)
-                else:
-                    compiled_mr = re.compile(mr)
+        mr_errors, compiled_mr = _check_modelregexp_usb(data, path)
+        yield "modelregexp", mr_errors
 
-        # test_model: each entry must be fully matched by modelregexp
+        tm_errors = []
         for model in data.get("test_model", []):
             model = str(model)
             if compiled_mr is None:
                 break
             if not compiled_mr.fullmatch(model):
-                errors.append(
-                    f"{path}: test_model: {model!r} does not match modelregexp"
-                )
+                tm_errors.append(f"{path}: test_model: {model!r} does not match modelregexp")
+        yield "test_model", tm_errors
 
-        # bcddeviceregexp: valid regex if non-empty
+        bcd_errors = []
         bcd = data.get("bcddeviceregexp", "")
         if bcd:
             err = check_regexp(str(bcd), "bcddeviceregexp", path)
             if err:
-                errors.append(err)
+                bcd_errors.append(err)
+        yield "bcddeviceregexp", bcd_errors
 
-        # devicetype: if present, must be a non-empty string
+        dt_errors = []
         dt = data.get("devicetype")
         if dt is not None and not str(dt).strip():
-            errors.append(f"{path}: devicetype: present but empty")
+            dt_errors.append(f"{path}: devicetype: present but empty")
+        yield "devicetype", dt_errors
 
-    return errors
+
+def check_entry_data(data, path, section):
+    """Flat wrapper around _run_validate_checks; returns list of error strings."""
+    return [err for _label, errs in _run_validate_checks(data, path, section) for err in errs]
 
 
 # ---------------------------------------------------------------------------
 # Tree walkers
 # ---------------------------------------------------------------------------
 
-def check_yaml_tree(yaml_root: Path):
+def _infer_section(path: Path) -> str:
+    """Infer section ('ata', 'usb', 'meta') from path components."""
+    parts = set(path.parts)
+    if "_meta" in parts:
+        return "meta"
+    if "usb" in parts:
+        return "usb"
+    return "ata"
+
+
+def _run_checks(path: Path, section: str | None = None):
+    """Yield check steps for a YAML file.
+
+    Each step is one of:
+      ("lint",     [],        [errors])   — flat step
+      ("parse",    [],        [errors])   — flat step
+      ("validate", sub_steps, [errors])   — sub_steps is list of (label, [errors])
+
+    Parse failure stops iteration.
+    """
+    if section is None:
+        section = _infer_section(path)
+
+    if _YAMLLINT_AVAILABLE:
+        yield "lint", [], check_yaml_lint(path)
+
+    try:
+        with path.open() as f:
+            data = yaml.safe_load(f)
+    except Exception as exc:
+        yield "parse", [], [f"{path}: YAML parse error: {exc}"]
+        return
+
+    if not isinstance(data, dict):
+        yield "parse", [], [f"{path}: expected a YAML mapping at top level"]
+        return
+    yield "parse", [], []
+
+    sub_steps = list(_run_validate_checks(data, str(path), section))
+    all_validate_errors = [err for _lbl, errs in sub_steps for err in errs]
+    yield "validate", sub_steps, all_validate_errors
+
+
+def _check_one_yaml_file(path: Path, section: str | None = None) -> list:
+    """Run all checks on a YAML file; return flat list of error strings."""
+    return [err for _label, _sub, errs in _run_checks(path, section) for err in errs]
+
+
+_COL = 17  # label column width for aligned output
+
+
+def _report(path: Path, steps: list, quiet: bool) -> list:
+    """Print per-file progress and return flat list of all errors.
+
+    verbose:
+        path/to/file.yaml
+          lint            [ok]
+          parse           [ok]
+          validate
+            modelregexp   [ok]
+            ...
+
+    quiet:  one line per file, '.' per passing check, 'F' per failing check
+        path/to/file.yaml: ....  ok
+        path/to/file.yaml: ..F   FAIL
+          error detail
+    """
+    all_errors = [err for _lbl, _sub, errs in steps for err in errs]
+
+    if quiet:
+        dots = []
+        for _lbl, sub_steps, errs in steps:
+            if sub_steps:
+                dots.extend("F" if se else "." for _sl, se in sub_steps)
+            else:
+                dots.append("F" if errs else ".")
+        dot_str = "".join(dots)
+        status = "FAIL" if all_errors else "ok"
+        print(f"{path}: {dot_str}  {status}")
+        for err in all_errors:
+            print(f"  {err}")
+    else:
+        print(path)
+        for label, sub_steps, errs in steps:
+            if sub_steps:
+                print(f"  {label}")
+                for sub_label, sub_errs in sub_steps:
+                    tag = "[FAIL]" if sub_errs else "[ok]"
+                    print(f"    {sub_label:<{_COL}}{tag}")
+                    for err in sub_errs:
+                        print(f"      {err}")
+            else:
+                tag = "[FAIL]" if errs else "[ok]"
+                print(f"  {label:<{_COL}}{tag}")
+                for err in errs:
+                    print(f"    {err}")
+
+    return all_errors
+
+
+def check_yaml_tree(yaml_root: Path, quiet: bool = False) -> list:
     """Walk the YAML tree and validate every entry. Returns list of error strings."""
     errors = []
 
@@ -245,18 +402,16 @@ def check_yaml_tree(yaml_root: Path):
         if not directory.exists():
             continue
         for path in sorted(directory.rglob("*.yaml")):
-            try:
-                with path.open() as f:
-                    data = yaml.safe_load(f)
-            except Exception as exc:
-                errors.append(f"{path}: YAML parse error: {exc}")
-                continue
-            if not isinstance(data, dict):
-                errors.append(f"{path}: expected a YAML mapping at top level")
-                continue
-            errors.extend(check_entry_data(data, str(path), section))
+            steps = list(_run_checks(path, section))
+            errors.extend(_report(path, steps, quiet))
 
     return errors
+
+
+def check_single_yaml(path: Path, quiet: bool = False) -> list:
+    """Validate a single YAML file, inferring section from directory structure."""
+    steps = list(_run_checks(path))
+    return _report(path, steps, quiet)
 
 
 def check_drivedb_h(h_path: Path):
@@ -380,6 +535,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="Validate drivedb YAML source tree or generated drivedb.h"
     )
+    parser.add_argument(
+        "file",
+        metavar="FILE",
+        type=Path,
+        nargs="?",
+        help="single YAML file to check (section inferred from path)",
+    )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "--yaml-root",
@@ -399,6 +561,11 @@ def main():
         action="store_true",
         help="for every entry with test_model, print a suggested modelregexp",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="one line per file: '.' per passing check, 'F' per failing check",
+    )
     args = parser.parse_args()
 
     if args.suggest:
@@ -407,13 +574,14 @@ def main():
         _run_suggest(args.yaml_root if not args.drivedb else None)
         return
 
-    if args.drivedb:
+    if args.file:
+        errors = check_single_yaml(args.file, quiet=args.quiet)
+    elif args.drivedb:
         errors = check_drivedb_h(args.drivedb)
+        for err in errors:
+            print(err)
     else:
-        errors = check_yaml_tree(args.yaml_root)
-
-    for err in errors:
-        print(err)
+        errors = check_yaml_tree(args.yaml_root, quiet=args.quiet)
 
     sys.exit(1 if errors else 0)
 
