@@ -616,6 +616,14 @@ def write_yaml(path: Path, data: dict, notes: list = None,
                     for part in parts:
                         f.write(f'  - {_scalar(part)}\n')
                     continue
+            if key == 'test_model':
+                if not val:
+                    f.write('test_model: []\n')
+                else:
+                    f.write('test_model:\n')
+                    for m in val:
+                        f.write(f'  - {_scalar(m)}\n')
+                continue
             f.write(yaml.dump({key: val}, default_flow_style=False,
                                allow_unicode=True, sort_keys=False, width=120))
 
@@ -657,6 +665,93 @@ def _build_data(base: dict, presets: list) -> dict:
     data = dict(base)
     data['presets'] = presets
     return data
+
+
+# ---------------------------------------------------------------------------
+# test_model extraction from "tested with ..." notes
+# ---------------------------------------------------------------------------
+
+def _parse_tested_with_models(text: str) -> list:
+    """Parse model strings from the payload of a 'tested with' note.
+
+    Handles comma-separated MODEL/FIRMWARE pairs; takes the part before '/'
+    as the model name and strips trailing parentheticals.
+    """
+    models = []
+    for part in re.split(r',\s*', text.rstrip(',')):
+        part = part.strip()
+        if not part:
+            continue
+        model = part.split('/')[0].strip()
+        model = re.sub(r'\s*\(.*\)\s*$', '', model).strip()
+        if model:
+            models.append(model)
+    return models
+
+
+def _looks_like_model_continuation(note: str) -> bool:
+    """Return True if note looks like a model-list continuation line.
+
+    Continuation lines from '// MODEL/FW, MODEL/FW' C comments have no
+    leading spaces after stripping.  They start with an uppercase letter or
+    digit and contain only model-string characters (A-Z, 0-9, -, /, comma,
+    space, dot, parens).  Reject lines that look like natural-language prose
+    (start with lowercase), URLs, or labelled notes ('spec ', 'source ', …).
+    """
+    s = note.strip()
+    if not s:
+        return False
+    if s[0].islower():
+        return False
+    if '://' in s:
+        return False
+    # prose keywords that signal a new category of note
+    for kw in ('spec ', 'source ', 'note ', 'see ', 'from ', 'default:'):
+        if s.lower().startswith(kw):
+            return False
+    return True
+
+
+def _extract_test_models(notes: list) -> list:
+    """Return model strings extracted from 'tested with ...' comment lines.
+
+    Handles two C-source patterns:
+      // tested with MODEL/FW, MODEL/FW          → single note with payload
+      { "Family", // tested with                 → bare 'tested with' note
+          // MODEL/FW, MODEL/FW                  → payload on subsequent notes
+    """
+    models = []
+    collecting = False
+    buf = ""
+
+    for note in notes:
+        stripped = note.strip()
+        lower = stripped.lower()
+        if lower.startswith("tested with"):
+            if collecting and buf:
+                models.extend(_parse_tested_with_models(buf))
+            payload = stripped[len("tested with"):].lstrip()
+            buf = payload  # may be empty for bare "tested with"
+            collecting = True
+        elif collecting and _looks_like_model_continuation(note):
+            buf = (buf.rstrip(', ') + ', ' + stripped) if buf else stripped
+        else:
+            if collecting and buf:
+                models.extend(_parse_tested_with_models(buf))
+                buf = ""
+            collecting = False
+
+    if collecting and buf:
+        models.extend(_parse_tested_with_models(buf))
+
+    # preserve order, deduplicate
+    seen = set()
+    result = []
+    for m in models:
+        if m not in seen:
+            seen.add(m)
+            result.append(m)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -707,12 +802,14 @@ def route_entry(entry, out_dir: Path, used_slugs: dict, raw_source: str = None) 
         used_slugs.setdefault(key, set())
         path = unique_path(section_dir, dev_slug or "device", used_slugs[key])
 
+        test_models = _extract_test_models(notes)
         base = {
             "device": device,
             "bridge": bridge,
             "modelregexp": mr,
             "bcddeviceregexp": fw,
             "warningmsg": wm,
+            "test_model": test_models,
         }
         write_yaml(path, _build_data(base, presets), notes=notes, disabled=disabled, raw_source=raw_source)
         return
@@ -726,11 +823,13 @@ def route_entry(entry, out_dir: Path, used_slugs: dict, raw_source: str = None) 
     used_slugs.setdefault(key, set())
     path = unique_path(section_dir, fam, used_slugs[key])
 
+    test_models = _extract_test_models(notes)
     base = {
         "modelfamily": mf,
         "modelregexp": mr,
         "firmwareregexp": fw,
         "warningmsg": wm,
+        "test_model": test_models,
     }
     write_yaml(path, _build_data(base, presets), notes=notes, disabled=disabled, raw_source=raw_source)
 
