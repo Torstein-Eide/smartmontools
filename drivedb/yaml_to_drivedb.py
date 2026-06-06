@@ -137,7 +137,10 @@ def _vendorattr_to_preset(va) -> str:
 
 
 def _get_all_presets(data) -> list:
-    """Return all preset strings: -v flags, -F flags, -d flag, then remaining presets."""
+    """Return all preset strings: -v flags, -F flags, -d flag, then remaining presets.
+
+    YAML-only fields (test_model) are intentionally excluded from .h output.
+    """
     result = []
     for va in data.get('vendorattributes', []):
         result.append(_vendorattr_to_preset(va))
@@ -277,6 +280,8 @@ def main():
                         help="Output file (default: stdout)")
     parser.add_argument("--yaml-root", metavar="DIR",
                         help="Root of YAML tree (default: drivedb/yaml next to this script)")
+    parser.add_argument("--check", action="store_true",
+                        help="Run YAML validation after generation; abort on errors")
     args = parser.parse_args()
 
     script_dir = Path(__file__).parent
@@ -284,6 +289,17 @@ def main():
 
     if not yaml_root.is_dir():
         sys.exit(f"ERROR: YAML root not found: {yaml_root}")
+
+    if args.check:
+        try:
+            from check_yaml import check_yaml_tree
+        except ImportError:
+            sys.exit("ERROR: check_yaml.py not found next to yaml_to_drivedb.py")
+        errors = check_yaml_tree(yaml_root)
+        if errors:
+            for err in errors:
+                sys.stderr.write(err + "\n")
+            sys.exit(1)
 
     entries, preamble = collect_entries(yaml_root)
     header = build_header(preamble)

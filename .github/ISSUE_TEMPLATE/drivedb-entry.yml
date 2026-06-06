@@ -201,7 +201,7 @@ body:
 
         Step 3 - Create a branch
         ```bash
-        git checkout -b drivedb/<vendor>-<family>
+        git checkout -b drivedb-<Model>
         ```
 
         Step 4 - Add or edit the YAML file
@@ -223,7 +223,7 @@ body:
         ```bash
         git add drivedb/yaml/<vendor>/<family>.yaml drivedb/drivedb.h
         git commit -m "drivedb: add <Family Name>"
-        git push -u origin drivedb/<vendor>-<family>
+        git push -u origin drivedb-<Model>
         ```
 
         Step 7 - Open a pull request
