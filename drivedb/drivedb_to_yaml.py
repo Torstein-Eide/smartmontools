@@ -541,6 +541,20 @@ def _scalar(s: str) -> str:
     return yaml.dump(s, default_flow_style=False, allow_unicode=True).splitlines()[0]
 
 
+def _flow_attr(va: dict) -> str:
+    """Render a vendorattribute dict as a YAML flow mapping: {id: N, format: …, …}
+
+    Uses yaml.dump in flow mode so special characters (?, :, #, …) are quoted
+    automatically — _scalar() is block-mode only and unsafe inside flow mappings.
+    """
+    ordered = {'id': va['id']}
+    for key in ('format', 'name', 'byteorder', 'comment'):
+        if key in va:
+            ordered[key] = va[key]
+    return yaml.dump(ordered, default_flow_style=True, allow_unicode=True,
+                     sort_keys=False).strip()
+
+
 def write_yaml(path: Path, data: dict, notes: list = None,
                disabled: list = None, raw_source: str = None) -> None:
     """Write a YAML file.
@@ -605,20 +619,13 @@ def write_yaml(path: Path, data: dict, notes: list = None,
             f.write(yaml.dump({key: val}, default_flow_style=False,
                                allow_unicode=True, sort_keys=False, width=120))
 
-        # Write vendorattributes manually for consistent formatting
+        # Write vendorattributes as inline flow mappings
         if not vendorattributes:
             f.write('vendorattributes: []\n')
         else:
             f.write('vendorattributes:\n')
             for va in vendorattributes:
-                f.write(f'  - id: {va["id"]}\n')
-                f.write(f'    format: {_scalar(va["format"])}\n')
-                if 'name' in va:
-                    f.write(f'    name: {_scalar(va["name"])}\n')
-                if 'byteorder' in va:
-                    f.write(f'    byteorder: {_scalar(va["byteorder"])}\n')
-                if 'comment' in va:
-                    f.write(f'    comment: {_scalar(va["comment"])}\n')
+                f.write(f'  - {_flow_attr(va)}\n')
 
         # Write firmwarebug (-F flags)
         if not firmwarebug:
