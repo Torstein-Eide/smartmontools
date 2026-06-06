@@ -114,6 +114,14 @@ def _get_list(data, key):
     return [str(v) for v in data.get(key, []) if v is not None]
 
 
+def _get_regexp(data, key):
+    """Return a regexp field, joining a list back with | when needed."""
+    val = data.get(key, '')
+    if isinstance(val, list):
+        return '|'.join(str(v) for v in val if v is not None)
+    return str(val) if val is not None else ''
+
+
 def _vendorattr_to_preset(va) -> str:
     """Reconstruct a -v preset string from a vendorattribute dict."""
     if not isinstance(va, dict):
@@ -163,7 +171,7 @@ def load_ata(data, path):
         sys.stderr.write(f"WARNING: {path}: missing required fields: {missing}\n")
     return emit_entry(
         modelfamily=data.get("modelfamily", ""),
-        modelregexp=data.get("modelregexp", ""),
+        modelregexp=_get_regexp(data, "modelregexp"),
         firmwareregexp=data.get("firmwareregexp", ""),
         warningmsg=data.get("warningmsg", ""),
         presets_list=_get_all_presets(data),
@@ -178,7 +186,7 @@ def load_usb(data, path):
     bridge = data.get("bridge", "")
     return emit_entry(
         modelfamily=f"USB: {device}; {bridge}",
-        modelregexp=data.get("modelregexp", ""),
+        modelregexp=_get_regexp(data, "modelregexp"),
         firmwareregexp=data.get("bcddeviceregexp", ""),
         warningmsg=data.get("warningmsg", ""),
         presets_list=_get_all_presets(data),

@@ -316,6 +316,44 @@ def parse_entries(text: str) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Regex helpers
+# ---------------------------------------------------------------------------
+
+def _split_top_level_alternatives(pattern: str) -> list:
+    """Split a regex on top-level | only — not inside (...) or [...].
+
+    Returns a one-element list when there is no top-level alternation,
+    so the caller can always check len(result) > 1 to decide on list vs scalar.
+    """
+    parts = []
+    depth = 0
+    in_class = False
+    start = 0
+    i = 0
+    while i < len(pattern):
+        c = pattern[i]
+        if in_class:
+            if c == ']':
+                in_class = False
+            elif c == '\\':
+                i += 1  # skip escaped char
+        elif c == '[':
+            in_class = True
+        elif c == '(':
+            depth += 1
+        elif c == ')':
+            depth -= 1
+        elif c == '|' and depth == 0:
+            parts.append(pattern[start:i])
+            start = i + 1
+        elif c == '\\':
+            i += 1  # skip escaped char
+        i += 1
+    parts.append(pattern[start:])
+    return parts
+
+
+# ---------------------------------------------------------------------------
 # Slug helpers
 # ---------------------------------------------------------------------------
 
@@ -552,9 +590,20 @@ def write_yaml(path: Path, data: dict, notes: list = None,
                 continue
             other_presets.append(p)
 
-        # Write base fields (modelfamily, modelregexp, …) via yaml.dump
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True,
-                  sort_keys=False, width=120)
+        # Write base scalar fields; split modelregexp into a list when it
+        # contains top-level alternation so each pattern is on its own line.
+        # Use yaml.dump per field so multi-line values (e.g. warningmsg with
+        # embedded \n) are written as proper block scalars.
+        for key, val in data.items():
+            if key == 'modelregexp' and val:
+                parts = _split_top_level_alternatives(str(val))
+                if len(parts) > 1:
+                    f.write('modelregexp:\n')
+                    for part in parts:
+                        f.write(f'  - {_scalar(part)}\n')
+                    continue
+            f.write(yaml.dump({key: val}, default_flow_style=False,
+                               allow_unicode=True, sort_keys=False, width=120))
 
         # Write vendorattributes manually for consistent formatting
         if not vendorattributes:
