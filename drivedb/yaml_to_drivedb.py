@@ -14,7 +14,6 @@ Walk order:
 
 import argparse
 import datetime
-import re
 import sys
 from pathlib import Path
 
@@ -28,140 +27,70 @@ try:
 except ImportError:
     sys.exit("Jinja2 is required: pip install jinja2")
 
-FOOTER = """\
-/*
-}; // builtin_knowndrives[]
- */"""
+_jinja_env = None
 
 
-def build_header(preamble) -> str:
-    """Render the file header via Jinja2.
-
-    Only the intro (copyright/license) section is read from preamble.
-    The struct documentation is hardcoded in drivedb_header.j2.
-    """
-    template_path = Path(__file__).parent / "drivedb_header.j2"
-    if not template_path.exists():
-        sys.exit(f"ERROR: template not found: {template_path}")
-
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(str(template_path.parent)),
-        trim_blocks=True,
-        lstrip_blocks=True,
-        keep_trailing_newline=True,
-    )
-
-    if not isinstance(preamble, dict):
-        preamble = {}
-
-    ctx = {
-        'intro': preamble.get('intro', {}),
-        'year_end': f"{datetime.date.today().year % 100:02d}",
-    }
-    return env.get_template("drivedb_header.j2").render(ctx).rstrip('\n')
+def c_escape(s) -> str:
+    """Escape a value for use as a C string literal."""
+    return str(s).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
-def c_escape(s: str) -> str:
-    """Escape a string for use as a C string literal."""
-    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+def _get_env():
+    global _jinja_env
+    if _jinja_env is None:
+        _jinja_env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(Path(__file__).parent)),
+            trim_blocks=True,
+            lstrip_blocks=True,
+            keep_trailing_newline=True,
+        )
+        _jinja_env.filters['c_escape'] = c_escape
+    return _jinja_env
 
 
-def emit_entry(modelfamily, modelregexp, firmwareregexp, warningmsg, presets_list):
-    """Return the C struct literal for one drive_settings entry."""
-    fw = c_escape(firmwareregexp)
-    wm = c_escape(warningmsg)
-    mf = c_escape(modelfamily)
-    mr = c_escape(modelregexp)
+def _get_regexp(data, key):
+    """Return a regexp field as a list of alternatives, or a plain string."""
+    val = data.get(key, '')
+    if isinstance(val, list):
+        return [str(v) for v in val if v is not None]
+    return str(val) if val is not None else ''
 
-    lines = []
-    lines.append(f'  {{ "{mf}",')
-    lines.append(f'    "{mr}",')
 
-    if wm:
-        lines.append(f'    "{fw}", "{wm}",')
-    else:
-        lines.append(f'    "{fw}", "",')
-
-    if not presets_list:
-        lines.append('    ""')
-    else:
-        for i, token in enumerate(presets_list):
-            suffix = " " if i < len(presets_list) - 1 else ""
-            lines.append(f'    "{c_escape(token.strip())}{suffix}"')
-
-    lines.append("  },")
-    return "\n".join(lines)
+def _raw_presets(data) -> list:
+    return [str(v) for v in data.get('presets', []) if v is not None]
 
 
 def load_version(data, path):
-    """Returns (entry_str, preamble) where preamble is a dict or list."""
+    """Returns (entry_dict, preamble) where preamble is a dict."""
     value = data.get("value", "")
     if not value:
         sys.stderr.write(f"WARNING: {path}: missing 'value'\n")
-    entry = emit_entry(
-        modelfamily=f"VERSION: {value}",
-        modelregexp="-",
-        firmwareregexp="-",
-        warningmsg="Version information",
-        presets_list=[],
-    )
+    entry = {
+        'modelfamily': f"VERSION: {value}",
+        'modelregexp': '-',
+        'firmwareregexp': '-',
+        'warningmsg': 'Version information',
+        'vendorattributes': [],
+        'firmwarebug': [],
+        'devicetype': None,
+        'presets': [],
+    }
     # preamble may be a dict (new structured format) or a list (legacy raw blocks)
     preamble = data.get("preamble", {})
     return entry, preamble
 
 
-def _get_list(data, key):
-    return [str(v) for v in data.get(key, []) if v is not None]
-
-
-def _get_regexp(data, key):
-    """Return a regexp field, joining a list back with | when needed."""
-    val = data.get(key, '')
-    if isinstance(val, list):
-        return '|'.join(str(v) for v in val if v is not None)
-    return str(val) if val is not None else ''
-
-
-def _vendorattr_to_preset(va) -> str:
-    """Reconstruct a -v preset string from a vendorattribute dict."""
-    if not isinstance(va, dict):
-        return str(va)
-    parts = [str(va.get('id', ''))]
-    if 'format' in va:
-        parts.append(str(va['format']))
-    if 'name' in va:
-        parts.append(str(va['name']))
-    if 'byteorder' in va:
-        parts.append(str(va['byteorder']))
-    return f"-v {','.join(parts)}"
-
-
-def _get_all_presets(data) -> list:
-    """Return all preset strings: -v flags, -F flags, -d flag, then remaining presets.
-
-    YAML-only fields (test_model) are intentionally excluded from .h output.
-    """
-    result = []
-    for va in data.get('vendorattributes', []):
-        result.append(_vendorattr_to_preset(va))
-    for fb in data.get('firmwarebug', []):
-        if fb:
-            result.append(f'-F {fb}')
-    dt = data.get('devicetype')
-    if dt:
-        result.append(f'-d {dt}')
-    result.extend(_get_list(data, 'presets'))
-    return result
-
-
 def load_default(data, path):
-    return emit_entry(
-        modelfamily="DEFAULT",
-        modelregexp="-",
-        firmwareregexp="-",
-        warningmsg="Default settings",
-        presets_list=_get_all_presets(data),
-    )
+    return {
+        'modelfamily': 'DEFAULT',
+        'modelregexp': '-',
+        'firmwareregexp': '-',
+        'warningmsg': 'Default settings',
+        'vendorattributes': data.get('vendorattributes', []),
+        'firmwarebug': [fb for fb in data.get('firmwarebug', []) if fb],
+        'devicetype': data.get('devicetype'),
+        'presets': _raw_presets(data),
+    }
 
 
 ATA_REQUIRED = {"modelfamily", "modelregexp"}
@@ -172,28 +101,32 @@ def load_ata(data, path):
     missing = ATA_REQUIRED - data.keys()
     if missing:
         sys.stderr.write(f"WARNING: {path}: missing required fields: {missing}\n")
-    return emit_entry(
-        modelfamily=data.get("modelfamily", ""),
-        modelregexp=_get_regexp(data, "modelregexp"),
-        firmwareregexp=data.get("firmwareregexp", ""),
-        warningmsg=data.get("warningmsg", ""),
-        presets_list=_get_all_presets(data),
-    )
+    return {
+        'kind': 'ata',
+        'modelfamily': data.get('modelfamily', ''),
+        'modelregexp': _get_regexp(data, 'modelregexp'),
+        'firmwareregexp': data.get('firmwareregexp', ''),
+        'warningmsg': data.get('warningmsg', ''),
+        'vendorattributes': data.get('vendorattributes', []),
+        'firmwarebug': [fb for fb in data.get('firmwarebug', []) if fb],
+        'devicetype': data.get('devicetype'),
+        'presets': _raw_presets(data),
+    }
 
 
 def load_usb(data, path):
     missing = USB_REQUIRED - data.keys()
     if missing:
         sys.stderr.write(f"WARNING: {path}: missing required fields: {missing}\n")
-    device = data.get("device", "")
-    bridge = data.get("bridge", "")
-    return emit_entry(
-        modelfamily=f"USB: {device}; {bridge}",
-        modelregexp=_get_regexp(data, "modelregexp"),
-        firmwareregexp=data.get("bcddeviceregexp", ""),
-        warningmsg=data.get("warningmsg", ""),
-        presets_list=_get_all_presets(data),
-    )
+    return {
+        'kind': 'usb',
+        'modelfamily': f"USB: {data.get('device', '')}; {data.get('bridge', '')}",
+        'modelregexp': _get_regexp(data, 'modelregexp'),
+        'firmwareregexp': data.get('bcddeviceregexp', ''),
+        'warningmsg': data.get('warningmsg', ''),
+        'devicetype': data.get('devicetype'),
+        'presets': _raw_presets(data),
+    }
 
 
 def parse_file(path: Path, yaml_root: Path):
@@ -205,9 +138,9 @@ def parse_file(path: Path, yaml_root: Path):
 
     entry_type = data.get("type", "")
 
-    if entry_type in ("version", "default"):
-        if entry_type == "version":
-            return load_version(data, path)
+    if entry_type == "version":
+        return load_version(data, path)
+    if entry_type == "default":
         return load_default(data, path)
 
     # Determine section from path relative to yaml_root
@@ -232,9 +165,9 @@ def parse_file(path: Path, yaml_root: Path):
 
 
 def collect_entries(yaml_root: Path):
-    """Returns (entries, preamble) where preamble is the list from version.yaml."""
+    """Returns (entries, preamble) where entries is a list of raw data dicts."""
     entries = []
-    preamble = []
+    preamble = {}
 
     # 1. _meta: version first, then default
     meta_dir = yaml_root / "_meta"
@@ -255,21 +188,14 @@ def collect_entries(yaml_root: Path):
     else:
         sys.stderr.write(f"WARNING: {default_path} not found\n")
 
-    # 2. ata/** sorted
-    ata_dir = yaml_root / "ata"
-    if ata_dir.is_dir():
-        for p in sorted(ata_dir.rglob("*.yaml")):
-            entry = parse_file(p, yaml_root)
-            if entry:
-                entries.append(entry)
-
-    # 3. usb/** sorted
-    usb_dir = yaml_root / "usb"
-    if usb_dir.is_dir():
-        for p in sorted(usb_dir.rglob("*.yaml")):
-            entry = parse_file(p, yaml_root)
-            if entry:
-                entries.append(entry)
+    # 2. ata/**, 3. usb/** sorted
+    for section in ("ata", "usb"):
+        section_dir = yaml_root / section
+        if section_dir.is_dir():
+            for p in sorted(section_dir.rglob("*.yaml")):
+                entry = parse_file(p, yaml_root)
+                if entry:
+                    entries.append(entry)
 
     return entries, preamble
 
@@ -281,7 +207,7 @@ def main():
     parser.add_argument("--yaml-root", metavar="DIR",
                         help="Root of YAML tree (default: drivedb/yaml next to this script)")
     parser.add_argument("--check", action="store_true",
-                        help="Run YAML validation after generation; abort on errors")
+                        help="Validate YAML tree before generation; abort on errors")
     args = parser.parse_args()
 
     script_dir = Path(__file__).parent
@@ -302,13 +228,18 @@ def main():
             sys.exit(1)
 
     entries, preamble = collect_entries(yaml_root)
-    header = build_header(preamble)
 
-    out_lines = [header, ""]
-    for entry in entries:
-        out_lines.append(entry)
-    out_lines.append(FOOTER)
-    output = "\n".join(out_lines) + "\n"
+    if not isinstance(preamble, dict):
+        preamble = {}
+    ctx = {
+        'intro': preamble.get('intro', {}),
+        'year_end': f"{datetime.date.today().year % 100:02d}",
+        'entries': entries,
+    }
+    try:
+        output = _get_env().get_template("drivedb.j2").render(ctx)
+    except jinja2.TemplateNotFound as e:
+        sys.exit(f"ERROR: template not found: {Path(__file__).parent / e.name}")
 
     if args.output:
         Path(args.output).write_text(output)

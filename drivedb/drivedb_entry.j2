@@ -1,0 +1,98 @@
+{# ============================================================
+   Shared helpers
+   ============================================================ #}
+
+{# Emit the preset string block given a pre-built list of
+   {'token': str, 'comment': str} dicts. The last item gets no
+   trailing space; all others get one so C concatenates them. #}
+{% macro _emit_presets(items) %}
+{% if not items %}
+    ""
+{% else %}
+{% for item in items[:-1] %}
+    "{{ item.token | c_escape }} "{{ ' // ' ~ item.comment if item.comment else '' }}
+{% endfor %}
+    "{{ items[-1].token | c_escape }}"{{ ' // ' ~ items[-1].comment if items[-1].comment else '' }}
+{% endif %}
+{% endmacro %}
+
+
+{# ============================================================
+   ATA entry
+   ============================================================ #}
+
+{% macro ata(e) %}
+{# -v vendorattributes #}
+{% set ns = namespace(items=[]) %}
+{% for va in e.vendorattributes %}
+{% if va is mapping %}
+{% set vns = namespace(parts=[va.id | string]) %}
+{% if 'format'    in va %}{% set vns.parts = vns.parts + [va.format    | string] %}{% endif %}
+{% if 'name'      in va %}{% set vns.parts = vns.parts + [va.name      | string] %}{% endif %}
+{% if 'byteorder' in va %}{% set vns.parts = vns.parts + [va.byteorder | string] %}{% endif %}
+{% set _tok = "-v " ~ (vns.parts | join(',')) %}
+{% set ns.items = ns.items + [{'token': _tok, 'comment': va.comment | default('')}] %}
+{% else %}
+{% set ns.items = ns.items + [{'token': va | string, 'comment': ''}] %}
+{% endif %}
+{% endfor %}
+{# -F firmwarebug #}
+{% for fb in e.firmwarebug %}
+{% set ns.items = ns.items + [{'token': '-F ' ~ fb, 'comment': ''}] %}
+{% endfor %}
+{# -d devicetype #}
+{% if e.devicetype %}
+{% set ns.items = ns.items + [{'token': '-d ' ~ e.devicetype, 'comment': ''}] %}
+{% endif %}
+{# raw presets #}
+{% for p in e.presets %}
+{% set ns.items = ns.items + [{'token': p | string, 'comment': ''}] %}
+{% endfor %}
+  // ### {{ e.modelfamily }}
+  { "{{ e.modelfamily | c_escape }}",
+   /// modelregexp
+{% if e.modelregexp is string %}
+   "{{ e.modelregexp | c_escape }}",
+{% else %}
+{% for alt in e.modelregexp[:-1] %}
+   "{{ alt | c_escape }}|"
+{% endfor %}
+   "{{ e.modelregexp[-1] | c_escape }}",
+{% endif %}
+   /// firmwareregexp and warningmsg
+   "{{ e.firmwareregexp | c_escape }}", "{{ e.warningmsg | c_escape }}",
+   /// presets
+{{ _emit_presets(ns.items) }}  },
+{% endmacro %}
+
+
+{# ============================================================
+   USB entry
+   ============================================================ #}
+
+{% macro usb(e) %}
+{# -d devicetype #}
+{% set ns = namespace(items=[]) %}
+{% if e.devicetype %}
+{% set ns.items = ns.items + [{'token': '-d ' ~ e.devicetype, 'comment': ''}] %}
+{% endif %}
+{# raw presets #}
+{% for p in e.presets %}
+{% set ns.items = ns.items + [{'token': p | string, 'comment': ''}] %}
+{% endfor %}
+// ### {{ e.modelfamily }}
+  { "{{ e.modelfamily | c_escape }}",
+    /// modelregexp (USB vendor:product ID)
+{% if e.modelregexp is string %}
+    "{{ e.modelregexp | c_escape }}",
+{% else %}
+{% for alt in e.modelregexp[:-1] %}
+    "{{ alt | c_escape }}|"
+{% endfor %}
+    "{{ e.modelregexp[-1] | c_escape }}",
+{% endif %}
+    /// firmwareregexp (bcdDevice) and warningmsg
+    "{{ e.firmwareregexp | c_escape }}", "{{ e.warningmsg | c_escape }}",
+    /// presets
+{{ _emit_presets(ns.items) }}  },
+{% endmacro %}

@@ -1,3 +1,4 @@
+{% from "drivedb_entry.j2" import ata, usb %}
 /*
  * {{ intro.get('filename', 'drivedb.h') }} - {{ intro.get('subtext', '') }}
  *
@@ -69,4 +70,32 @@
 
 /*
 const drive_settings builtin_knowndrives[] = {
+ */
+
+{% set state = namespace(prev_kind='') %}
+{% for e in entries %}
+{% set kind = e.kind | default('ata') %}
+{% if kind == 'ata' and state.prev_kind != 'ata' %}
+
+/////////////////////
+/// ## ATA entries
+/////////////////////
+
+{% endif %}
+{% if kind == 'usb' and state.prev_kind != 'usb' %}
+
+/////////////////////
+/// ## USB entries
+/////////////////////
+
+{% endif %}
+{% set state.prev_kind = kind %}
+{% if e.kind == 'usb' %}
+{{ usb(e) }}
+{% else %}
+{{ ata(e) }}
+{% endif %}
+{% endfor %}
+/*
+}; // builtin_knowndrives[]
  */
