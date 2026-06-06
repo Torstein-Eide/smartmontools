@@ -114,13 +114,42 @@ def _get_list(data, key):
     return [str(v) for v in data.get(key, []) if v is not None]
 
 
+def _vendorattr_to_preset(va) -> str:
+    """Reconstruct a -v preset string from a vendorattribute dict."""
+    if not isinstance(va, dict):
+        return str(va)
+    parts = [str(va.get('id', ''))]
+    if 'format' in va:
+        parts.append(str(va['format']))
+    if 'name' in va:
+        parts.append(str(va['name']))
+    if 'byteorder' in va:
+        parts.append(str(va['byteorder']))
+    return f"-v {','.join(parts)}"
+
+
+def _get_all_presets(data) -> list:
+    """Return all preset strings: -v flags, -F flags, -d flag, then remaining presets."""
+    result = []
+    for va in data.get('vendorattributes', []):
+        result.append(_vendorattr_to_preset(va))
+    for fb in data.get('firmwarebug', []):
+        if fb:
+            result.append(f'-F {fb}')
+    dt = data.get('devicetype')
+    if dt:
+        result.append(f'-d {dt}')
+    result.extend(_get_list(data, 'presets'))
+    return result
+
+
 def load_default(data, path):
     return emit_entry(
         modelfamily="DEFAULT",
         modelregexp="-",
         firmwareregexp="-",
         warningmsg="Default settings",
-        presets_list=_get_list(data, "presets"),
+        presets_list=_get_all_presets(data),
     )
 
 
@@ -137,7 +166,7 @@ def load_ata(data, path):
         modelregexp=data.get("modelregexp", ""),
         firmwareregexp=data.get("firmwareregexp", ""),
         warningmsg=data.get("warningmsg", ""),
-        presets_list=_get_list(data, "presets"),
+        presets_list=_get_all_presets(data),
     )
 
 
@@ -152,7 +181,7 @@ def load_usb(data, path):
         modelregexp=data.get("modelregexp", ""),
         firmwareregexp=data.get("bcddeviceregexp", ""),
         warningmsg=data.get("warningmsg", ""),
-        presets_list=_get_list(data, "presets"),
+        presets_list=_get_all_presets(data),
     )
 
 

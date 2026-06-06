@@ -150,6 +150,55 @@ def _strip_annotation(s: str) -> str:
     return s[:idx].rstrip() if idx != -1 else s
 
 
+def _parse_f_preset(preset_str: str) -> str | None:
+    """Return the TYPE argument of a -F TYPE preset, or None if not a -F flag."""
+    s = preset_str.split('  # ')[0].strip()
+    if s.startswith('-F '):
+        return s[3:].strip() or None
+    return None
+
+
+def _parse_d_preset(preset_str: str) -> str | None:
+    """Return the TYPE argument of a -d TYPE preset, or None if not a -d flag."""
+    s = preset_str.split('  # ')[0].strip()
+    if s.startswith('-d '):
+        return s[3:].strip() or None
+    return None
+
+
+def _parse_v_preset(preset_str: str) -> dict | None:
+    """Parse a -v preset string into a structured dict, or return None.
+
+    Handles '  # comment' suffixes; extracts id, format, name, and optionally
+    byteorder.  Returns None for any preset that isn't a -v flag.
+    """
+    comment = None
+    s = preset_str
+    if '  # ' in s:
+        s, comment = s.split('  # ', 1)
+        s = s.rstrip()
+
+    s = s.strip()
+    if not s.startswith('-v '):
+        return None
+
+    rest = s[3:].strip()
+    parts = [p.strip() for p in rest.split(',')]
+    if not parts or not parts[0].isdigit():
+        return None
+
+    result: dict = {'id': int(parts[0])}
+    if len(parts) > 1:
+        result['format'] = parts[1]
+    if len(parts) > 2:
+        result['name'] = parts[2]
+    if len(parts) > 3:
+        result['byteorder'] = parts[3]
+    if comment:
+        result['comment'] = comment.strip()
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
@@ -302,11 +351,16 @@ def family_slug(modelfamily: str) -> str:
 
 
 def unique_path(directory: Path, slug: str, used: set) -> Path:
-    """Return a path that doesn't collide with already-used names."""
+    """Return a path that doesn't collide with already-used names.
+
+    Suffixes are zero-padded to two digits (_02, _03 … _10 …) so that
+    alphabetical sort order matches insertion order for families with ≥10
+    duplicate slugs.
+    """
     candidate = slug
     n = 2
     while candidate in used:
-        candidate = f"{slug}_{n}"
+        candidate = f"{slug}_{n:02d}"
         n += 1
     used.add(candidate)
     return directory / f"{candidate}.yaml"
@@ -471,17 +525,64 @@ def write_yaml(path: Path, data: dict, notes: list = None,
         if notes or disabled or raw_source:
             f.write('\n')
 
-        # Write all fields except presets using yaml.dump per field
-        presets = data.pop('presets', [])
+        # Split presets into structured fields
+        raw_presets = data.pop('presets', [])
+        vendorattributes = []
+        firmwarebug = []
+        devicetype = None
+        other_presets = []
+        for p in raw_presets:
+            v = _parse_v_preset(p)
+            if v is not None:
+                vendorattributes.append(v)
+                continue
+            fb = _parse_f_preset(p)
+            if fb is not None:
+                firmwarebug.append(fb)
+                continue
+            d = _parse_d_preset(p)
+            if d is not None:
+                devicetype = d
+                continue
+            other_presets.append(p)
+
+        # Write base fields (modelfamily, modelregexp, …) via yaml.dump
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True,
                   sort_keys=False, width=120)
 
-        # Write presets manually so inline annotations become real YAML comments
-        if not presets:
-            f.write('presets: []\n')
+        # Write vendorattributes manually for consistent formatting
+        if not vendorattributes:
+            f.write('vendorattributes: []\n')
         else:
+            f.write('vendorattributes:\n')
+            for va in vendorattributes:
+                f.write(f'  - id: {va["id"]}\n')
+                f.write(f'    format: {_scalar(va["format"])}\n')
+                if 'name' in va:
+                    f.write(f'    name: {_scalar(va["name"])}\n')
+                if 'byteorder' in va:
+                    f.write(f'    byteorder: {_scalar(va["byteorder"])}\n')
+                if 'comment' in va:
+                    f.write(f'    comment: {_scalar(va["comment"])}\n')
+
+        # Write firmwarebug (-F flags)
+        if not firmwarebug:
+            f.write('firmwarebug: []\n')
+        else:
+            f.write('firmwarebug:\n')
+            for fb in firmwarebug:
+                f.write(f'  - {_scalar(fb)}\n')
+
+        # Write devicetype (-d flag) — scalar, null when absent
+        if devicetype is None:
+            f.write('devicetype: null\n')
+        else:
+            f.write(f'devicetype: {_scalar(devicetype)}\n')
+
+        # Write any remaining unrecognised presets
+        if other_presets:
             f.write('presets:\n')
-            for p in presets:
+            for p in other_presets:
                 if '  # ' in p:
                     val, annotation = p.split('  # ', 1)
                     f.write(f'  - {_scalar(val.rstrip())}  # {annotation}\n')
