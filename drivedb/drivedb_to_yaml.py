@@ -245,11 +245,17 @@ def _parse_with_notes(text: str) -> list:
                 entry_notes.append(tokens[i][1])
                 i += 1
             # concatenate adjacent strings → one field value
+            # Strip embedded '  # annotation' from each token before joining;
+            # annotations belong in notes, not in the field value itself.
             field_val = ''
             while i < n and tokens[i] not in (',', '}'):
                 t = tokens[i]
                 if isinstance(t, tuple) and t[0] == 'str':
-                    field_val += t[1]
+                    s = t[1]
+                    if '  # ' in s:
+                        s, ann = s.split('  # ', 1)
+                        entry_notes.append(ann.strip())
+                    field_val += s
                     i += 1
                 elif isinstance(t, tuple) and t[0] == 'comment':
                     entry_notes.append(t[1])
