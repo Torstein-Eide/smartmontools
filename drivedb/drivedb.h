@@ -4972,7 +4972,8 @@ const drive_settings builtin_knowndrives[] = {
     "-v 9,msec24hour32 "
     "-v 183,raw48,SATA_Downshift_Count "
     "-v 188,raw16 "
-    "-v 195,raw48,ECC_On_the_Fly_Count "
+    // [6-4]: ECCOnTheFlyErrors (UECC) count, [3-0]: number of sectors read
+    "-v 195,raw24/raw32,ECC_On_the_Fly_Count "
     "-v 240,msec24hour32"
   },
   { "Seagate Barracuda ES.2", // fixed firmware
